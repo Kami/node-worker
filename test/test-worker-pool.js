@@ -10,7 +10,7 @@ exports['test basic functionallity'] = function(beforeExit) {
 
   setTimeout(function() {
     worker_pool.terminate();
-  }, 6000);
+  }, 4000);
 
   worker_pool.on('ready', function() {
     n++;
@@ -46,6 +46,97 @@ exports['test basic functionallity'] = function(beforeExit) {
 
   beforeExit(function() {
     assert.equal(n, 1 + 10 + 10);
+  });
+};
+
+exports['test many jobs'] = function(beforeExit) {
+  var n = 0;
+  var worker_pool1 = new WorkerPool(1, __dirname + '/fixtures/pool-worker.js');
+  var worker_pool2 = new WorkerPool(20, __dirname + '/fixtures/pool-worker.js');
+
+  var worker_pool1_start, worker_pool1_total;
+  var worker_pool2_start, worker_pool2_total;
+  var timeout = 10000;
+
+  worker_pool1.on('ready', function() {
+    n++;
+    worker_pool1_start = new Date().getTime();
+
+    for (var i = 1; i <= 40; i++) {
+      (function(i) {
+        var worker_msg = { 'number': i, 'return_after': 200 };
+
+        worker_pool1.run_in_pool(worker_msg, { 'timeout': timeout }, function(err, worker) {
+          if (!err) {
+            n++;
+
+            worker.addListener('result', function(result) {
+              n++;
+              assert.ok(result.result == (10 + i), 'result equal');
+
+              if (i == 40) {
+                worker_pool1.terminate();
+                worker_pool1_total = (new Date().getTime() - worker_pool1_start);
+              }
+            });
+
+            worker.addListener('error', function(err) {
+              assert.fail('worker ' + i + ' emitted error: ' + err.message);
+            });
+
+            worker.addListener('timeout', function() {
+              assert.fail('emitted timeout');
+            });
+          }
+          else {
+            assert.fail('run_in_pool returned error: ' + err.message)
+          }
+        });
+      }(i));
+    }
+  });
+
+  worker_pool2.on('ready', function() {
+    n++;
+    worker_pool2_start = new Date().getTime();
+
+    for (var i = 1; i <= 40; i++) {
+      (function(i) {
+        var worker_msg = { 'number': i, 'return_after': 200 };
+
+        worker_pool2.run_in_pool(worker_msg, { 'timeout': timeout }, function(err, worker) {
+          if (!err) {
+            n++;
+
+            worker.addListener('result', function(result) {
+              n++;
+              assert.ok(result.result == (10 + i), 'result equal');
+
+              if (i == 40) {
+                worker_pool2.terminate();
+                worker_pool2_total = (new Date().getTime() - worker_pool2_start);
+              }
+            });
+
+            worker.addListener('error', function(err) {
+              assert.fail('worker ' + i + ' emitted error: ' + err.message);
+            });
+
+            worker.addListener('timeout', function() {
+              assert.fail('emitted timeout');
+            });
+          }
+          else {
+            assert.fail('run_in_pool returned error: ' + err.message)
+          }
+        });
+      }(i));
+    }
+  });
+
+  beforeExit(function() {
+    assert.equal(n, 2 + 80 + 80);
+    assert.ok(worker_pool2_total < worker_pool1_total);
   });
 };
 
@@ -124,7 +215,7 @@ exports['test pool terminate'] = function(beforeExit) {
       n++;
       worker_pool.resize_pool(20);
       assert.equal(0, worker_pool.get_size());
-    });
+    }, 3000);
   });
 
   beforeExit(function() {
@@ -201,6 +292,10 @@ exports['test worker error'] = function(beforeExit) {
           assert.match(err.message, /worker thrown an error/i);
 
           worker_pool.terminate();
+        });
+
+        worker.addListener('timeout', function() {
+          assert.fail('emitted timeout');
         });
       }
       else {
