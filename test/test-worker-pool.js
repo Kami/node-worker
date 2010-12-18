@@ -308,3 +308,80 @@ exports['test worker error'] = function(beforeExit) {
     assert.equal(n, 3);
   });
 };
+
+exports['test timeout and respawn'] = function(beforeExit) {
+  var n = 0;
+  var worker_pool = new WorkerPool(5, __dirname + '/fixtures/pool-worker.js');
+
+  worker_pool.on('ready', function() {
+    n++;
+
+    var timeout = 200;
+
+    for (var i = 1; i <= 5; i++) {
+      (function(i) {
+        var worker_msg = { 'number': i, 'return_after': 5000, 'throw_error': false };
+        worker_pool.run_in_pool(worker_msg, { 'timeout': timeout }, function(err, worker) {
+          if (!err) {
+            n++;
+
+            worker.addListener('result', function(result) {
+              assert.fail('emitted result: ' + result);
+            });
+
+            worker.addListener('error', function(err) {
+              assert.fail('emitted error' + err.message);
+            });
+
+            worker.addListener('timeout', function() {
+              n++;
+
+              assert.ok('emitted timeout');
+            });
+          }
+          else {
+            assert.fail('run_in_pool returned error: ' + err.message)
+          }
+        });
+      }(i));
+    }
+
+    setTimeout(function() {
+      var timeout = 5000;
+      for (var i = 1; i <= 5; i++) {
+        (function(i) {
+          var worker_msg = { 'number': i, 'return_after': 0, 'throw_error': false };
+          worker_pool.run_in_pool(worker_msg, { 'timeout': timeout }, function(err, worker) {
+            if (!err) {
+              n++;
+
+              worker.addListener('result', function(result) {
+                n++;
+                assert.ok(result.result == (10 + i), 'result equal');
+
+                if (i == 5) {
+                  worker_pool.terminate();
+                }
+              });
+
+              worker.addListener('error', function(err) {
+                assert.fail('emitted error' + err.message);
+              });
+
+              worker.addListener('timeout', function() {
+                assert.fail('emitted timeout');
+              });
+            }
+            else {
+              assert.fail('run_in_pool returned error: ' + err.message)
+            }
+          });
+        }(i));
+      }
+    }, 8000);
+  });
+
+  beforeExit(function() {
+    assert.equal(n, 1 + 10 + 10);
+  });
+};
