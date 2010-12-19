@@ -255,7 +255,7 @@ exports['test worker timeout'] = function(beforeExit) {
             assert.equal(5, worker_pool.get_size());
 
             worker_pool.terminate();
-          }, 2000);
+          }, 1000);
         });
       }
       else {
@@ -383,5 +383,49 @@ exports['test timeout and respawn'] = function(beforeExit) {
 
   beforeExit(function() {
     assert.equal(n, 1 + 10 + 10);
+  });
+};
+
+exports['test job queuing'] = function(beforeExit) {
+  var n = 0;
+  var got_worker_handle_time, ready_time;
+  var worker_pool = new WorkerPool(5, __dirname + '/fixtures/pool-worker.js');
+
+  var timeout = 5000;
+  var worker_msg = { 'number': 1, 'return_after': 200, 'throw_error': false };
+  worker_pool.run_in_pool(worker_msg, { 'timeout': timeout }, function(err, worker) {
+    got_worker_handle_time =  new Date().getTime();
+
+    if (!err) {
+      n++;
+
+      worker.addListener('result', function(result) {
+        n++;
+        assert.ok(result.result == 10 + 1, 'result equal');
+
+        worker_pool.terminate();
+      });
+
+      worker.addListener('error', function(err) {
+        assert.fail('emitted error' + err.message);
+      });
+
+      worker.addListener('timeout', function() {
+          assert.fail('emitted timeout');
+      });
+    }
+    else {
+      assert.fail('run_in_pool returned error: ' + err.message)
+    }
+  });
+
+  worker_pool.on('ready', function() {
+    ready_time = new Date().getTime();
+    n++;
+  });
+
+  beforeExit(function() {
+    assert.equal(n, 3);
+    assert.ok(ready_time < got_worker_handle_time);
   });
 };
